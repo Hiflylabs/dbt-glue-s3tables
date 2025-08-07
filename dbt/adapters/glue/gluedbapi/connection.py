@@ -436,42 +436,47 @@ class SqlWrapper2:
         raw_results = {"type": "results", "rowcount": rowcount, "results": results, "description": description}
 
         if use_arrow:
-            s3_client = boto3.client('s3')
-            glue_client = boto3.client('glue')
-            security_config_name = glue_client.get_session(Id=session_id)["Session"].get("SecurityConfiguration", None)
-            o = urllib.parse.urlparse(location)
-            result_bucket = o.netloc
-            key = urllib.parse.unquote(o.path)[1:]
-            if not key.endswith('/'):
-                key = key + '/'
-            suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
-            filename = f"{session_id}-{suffix}.feather"
-            result_key = key + f"tmp-results/{filename}"
-            pdf = pd.DataFrame.from_dict(raw_results, orient="index")
-            feather.write_feather(pdf.transpose(), filename, "zstd")
+            # Only use location for arrow results if it's provided and not empty
+            if location and location.strip():
+                s3_client = boto3.client('s3')
+                glue_client = boto3.client('glue')
+                security_config_name = glue_client.get_session(Id=session_id)["Session"].get("SecurityConfiguration", None)
+                o = urllib.parse.urlparse(location)
+                result_bucket = o.netloc
+                key = urllib.parse.unquote(o.path)[1:]
+                if not key.endswith('/'):
+                    key = key + '/'
+                suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=4))
+                filename = f"{session_id}-{suffix}.feather"
+                result_key = key + f"tmp-results/{filename}"
+                pdf = pd.DataFrame.from_dict(raw_results, orient="index")
+                feather.write_feather(pdf.transpose(), filename, "zstd")
 
-            extra_args = {}
-            if security_config_name:
-                security_config = glue_client.get_security_configuration(Name=security_config_name)
-                s3_encryption = security_config["SecurityConfiguration"]["EncryptionConfiguration"].get("S3Encryption", None)
-                if s3_encryption and len(s3_encryption) > 0:
-                    s3_encryption_mode = s3_encryption[0]["S3EncryptionMode"]
-                    kms_key_arn = s3_encryption[0].get("KmsKeyArn", None)
-                    if s3_encryption_mode == "SSE-S3":
-                        extra_args["ServerSideEncryption"] = "AES256"
-                    elif s3_encryption_mode == "SSE-KMS":
-                        extra_args["ServerSideEncryption"] = "aws:kms"
-                        extra_args["SSEKMSKeyId"] = kms_key_arn.split("/")[1]
-            s3_client.upload_file(filename, result_bucket, result_key, ExtraArgs=extra_args)
-            # Print and return only metadata instead of actual result data payload. The param use_arrow=True is always
-            # used with output=True, and stdout is used to pass those values to Interactive Sessions API.
-            del raw_results['results']
-            raw_results['result_bucket'] = result_bucket
-            raw_results['result_key'] = result_key
-            raw_results['description'] = description
-            dumped_results = json.dumps(raw_results, default=str)
-            print(dumped_results)
-            return dumped_results
+                extra_args = {}
+                if security_config_name:
+                    security_config = glue_client.get_security_configuration(Name=security_config_name)
+                    s3_encryption = security_config["SecurityConfiguration"]["EncryptionConfiguration"].get("S3Encryption", None)
+                    if s3_encryption and len(s3_encryption) > 0:
+                        s3_encryption_mode = s3_encryption[0]["S3EncryptionMode"]
+                        kms_key_arn = s3_encryption[0].get("KmsKeyArn", None)
+                        if s3_encryption_mode == "SSE-S3":
+                            extra_args["ServerSideEncryption"] = "AES256"
+                        elif s3_encryption_mode == "SSE-KMS":
+                            extra_args["ServerSideEncryption"] = "aws:kms"
+                            extra_args["SSEKMSKeyId"] = kms_key_arn.split("/")[1]
+                s3_client.upload_file(filename, result_bucket, result_key, ExtraArgs=extra_args)
+                # Print and return only metadata instead of actual result data payload. The param use_arrow=True is always
+                # used with output=True, and stdout is used to pass those values to Interactive Sessions API.
+                del raw_results['results']
+                raw_results['result_bucket'] = result_bucket
+                raw_results['result_key'] = result_key
+                raw_results['description'] = description
+                dumped_results = json.dumps(raw_results, default=str)
+                print(dumped_results)
+                return dumped_results
+            else:
+                # If no location provided for arrow results, fall back to regular JSON output
+                pass
 
         dumped_results = json.dumps(raw_results, default=str)
         if output:

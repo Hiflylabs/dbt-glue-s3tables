@@ -87,7 +87,11 @@ class GlueCursor:
         if "custom_glue_code_for_dbt_adapter" in self.sql:
             self.code = textwrap.dedent(self.sql.replace("custom_glue_code_for_dbt_adapter", ""))
         else:
-            self.code = f"SqlWrapper2.execute('''{self.sql}''', use_arrow={self.connection.use_arrow}, location='{self.connection.location}')"
+            # Only include location parameter if it's not None or empty
+            if self.connection.location and self.connection.location.strip():
+                self.code = f"SqlWrapper2.execute('''{self.sql}''', use_arrow={self.connection.use_arrow}, location='{self.connection.location}')"
+            else:
+                self.code = f"SqlWrapper2.execute('''{self.sql}''', use_arrow={self.connection.use_arrow})"
 
         self.statement = GlueStatement(
             client=self.connection.client,

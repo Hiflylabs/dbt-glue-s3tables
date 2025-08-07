@@ -192,6 +192,12 @@ class GlueAdapter(SQLAdapter):
     def glue_rename_relation(self, from_relation, to_relation):
         logger.debug("rename " + from_relation.schema + " to " + to_relation.identifier)
         session, client = self.get_connection()
+        
+        # Build path option only if location is provided
+        path_option = ""
+        if session.credentials.location and session.credentials.location.strip():
+            path_option = f'.option("path", "{session.credentials.location}/{to_relation.schema}/{to_relation.name}/")'
+        
         code = f'''
         custom_glue_code_for_dbt_adapter
         df = spark.sql("""select * from {from_relation.schema}.{from_relation.name}""")
@@ -199,8 +205,7 @@ class GlueAdapter(SQLAdapter):
         table_name = '{to_relation.schema}.{to_relation.name}'
         writer = (
                         df.write.mode("append")
-                        .format("parquet")
-                        .option("path", "{session.credentials.location}/{to_relation.schema}/{to_relation.name}/")
+                        .format("parquet"){path_option}
                     )
         writer.saveAsTable(table_name, mode="append")
         spark.sql("""drop table {from_relation.schema}.{from_relation.name}""")
@@ -385,11 +390,14 @@ class GlueAdapter(SQLAdapter):
     def get_location(self, relation: BaseRelation):
         session, client = self.get_connection()
         location = session.credentials.location
-        if location is not None:
+        if location is not None and location.strip():
             # Apply the check to remove any trailing slashes from location
             # The old get_iceberg_location don't work for Windows users since os.path.join uses '\' in windows
             location = location.rstrip("/")
-        return f"LOCATION '{location}/{relation.schema}/{relation.name}'"
+            return f"LOCATION '{location}/{relation.schema}/{relation.name}'"
+        else:
+            # Return empty string for S3 table buckets when location is None or empty
+            return ""
 
     def drop_schema(self, relation: BaseRelation) -> None:
         session, client = self.get_connection()
@@ -416,13 +424,16 @@ class GlueAdapter(SQLAdapter):
         else:
             try:
                 # create when database does not exist
-                client.create_database(
-                    DatabaseInput={
-                        "Name": relation.schema,
-                        'Description': 'test dbt database',
-                        'LocationUri': f"{session.credentials.location}/{relation.schema}/",
-                    }
-                )
+                database_input = {
+                    "Name": relation.schema,
+                    "Description": "test dbt database",
+                }
+                
+                # Only include LocationUri if location is provided and not empty
+                if session.credentials.location and session.credentials.location.strip():
+                    database_input["LocationUri"] = f"{session.credentials.location}/{relation.schema}/"
+                
+                client.create_database(DatabaseInput=database_input)
                 Entries = []
                 for i, role_arn in enumerate([session.credentials.role_arn]):
                     Entries.append(
@@ -637,6 +648,11 @@ df = df.selectExpr({cast_columns})
                     code += """
 df = spark.createDataFrame(csv)
 """
+                # Build path option only if location is provided
+                path_option = ""
+                if session.credentials.location and session.credentials.location.strip():
+                    path_option = f'.option("path", "{session.credentials.location}/{model["schema"]}/{model["name"]}")'
+                
                 code += f'''
 table_name = '{model["schema"]}.{model["name"]}'
 if (spark.sql("show tables in {model["schema"]}").where("tableName == lower('{model["name"]}')").count() > 0):
@@ -645,8 +661,7 @@ if (spark.sql("show tables in {model["schema"]}").where("tableName == lower('{mo
         .format("{session.credentials.seed_format}")\
         .insertInto(table_name, overwrite={mode})
 else:
-    df.write\
-        .option("path", "{session.credentials.location}/{model["schema"]}/{model["name"]}")\
+    df.write{path_option}\
         .format("{session.credentials.seed_format}")\
         .saveAsTable(table_name)
 SqlWrapper2.execute("""select * from {model["schema"]}.{model["name"]} limit 1""")
@@ -711,7 +726,12 @@ SqlWrapper2.execute("""select * from {model["schema"]}.{model["name"]} limit 1""
     def delta_update_manifest(self, target_relation, custom_location, partition_by):
         session, client = self.get_connection()
         if custom_location == "empty":
-            location = f"{session.credentials.location}/{target_relation.schema}/{target_relation.name}"
+            # Only build location path if session.credentials.location is provided
+            if session.credentials.location and session.credentials.location.strip():
+                location = f"{session.credentials.location}/{target_relation.schema}/{target_relation.name}"
+            else:
+                # For S3 table buckets, use empty location
+                location = ""
         else:
             location = custom_location
 
@@ -747,7 +767,12 @@ SqlWrapper2.execute("""select * from {model["schema"]}.{model["name"]} limit 1""
 
         table_name = f'{target_relation.schema}.{target_relation.name}'
         if custom_location == "empty":
-            location = f"{session.credentials.location}/{target_relation.schema}/{target_relation.name}"
+            # Only build location path if session.credentials.location is provided
+            if session.credentials.location and session.credentials.location.strip():
+                location = f"{session.credentials.location}/{target_relation.schema}/{target_relation.name}"
+            else:
+                # For S3 table buckets, use empty location
+                location = ""
         else:
             location = custom_location
         
@@ -881,7 +906,12 @@ SqlWrapper2.execute("""select 1""")
 
     def hudi_write(self, write_mode, session, target_relation, custom_location):
         if custom_location == "empty":
-            return f'''outputDf.write.format('org.apache.hudi').options(**combinedConf).mode('{write_mode}').save("{session.credentials.location}/{target_relation.schema}/{target_relation.name}/")'''
+            # Only build location path if session.credentials.location is provided
+            if session.credentials.location and session.credentials.location.strip():
+                return f'''outputDf.write.format('org.apache.hudi').options(**combinedConf).mode('{write_mode}').save("{session.credentials.location}/{target_relation.schema}/{target_relation.name}/")'''
+            else:
+                # For S3 table buckets, save without explicit path
+                return f'''outputDf.write.format('org.apache.hudi').options(**combinedConf).mode('{write_mode}').saveAsTable("{target_relation.schema}.{target_relation.name}")'''
         else:
             return f'''outputDf.write.format('org.apache.hudi').options(**combinedConf).mode('{write_mode}').save("{custom_location}/")'''
 
