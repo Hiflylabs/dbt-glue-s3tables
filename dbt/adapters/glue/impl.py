@@ -585,6 +585,24 @@ class GlueAdapter(SQLAdapter):
         return session.credentials.datalake_formats
     
     @available
+    def is_iceberg_relation(self, relation):
+        """Check if a relation is an Iceberg table"""
+        session, client = self.get_connection()
+        if not relation:
+            return False
+        
+        try:
+            schema = self._strip_catalog_from_schema(relation.schema)
+            response = client.get_table(
+                DatabaseName=schema,
+                Name=relation.name
+            )
+            _specific_type = response.get("Table", {}).get('Parameters', {}).get('table_type', '')
+            return _specific_type.lower() == 'iceberg'
+        except Exception:
+            return False
+    
+    @available
     def create_csv_table(self, model, agate_table):
         session, client = self.get_connection()
         logger.debug(model)
