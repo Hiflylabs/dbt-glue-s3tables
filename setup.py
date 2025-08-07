@@ -36,11 +36,11 @@ def get_version(rel_path):
         raise RuntimeError("Unable to find version string.")
 
 
-package_name = "dbt-glue"
+package_name = "dbt-glue-test"
 package_version = get_version("dbt/adapters/glue/__version__.py")
-dbt_version = "1.9.4"
-dbt_spark_version = "1.9.2"
-description = """dbt adapter for AWS Glue"""
+dbt_version = "1.9.4.0"
+dbt_spark_version = "1.9.2.0"
+description = """My test for s3 tables in dbt adapter for AWS Glue"""
 long_description = read('README.md')
 setup(
     name=package_name,
