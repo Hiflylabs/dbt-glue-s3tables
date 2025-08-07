@@ -71,6 +71,7 @@
 
 {% macro glue__drop_relation(relation) -%}
   {%- set file_format = config.get('file_format', default='parquet') -%}
+  {%- set datalake_formats = adapter.get_connection()[0].credentials.datalake_formats -%}
   {%- set full_relation = relation -%}
 
   {%- if file_format == 'iceberg' -%}
@@ -82,7 +83,10 @@
           drop view if exists {{ this }}
       {%- else -%}
           {%- set location_clause = adapter.get_location(relation) -%}
-          {%- if file_format == 'iceberg' and location_clause == '' -%}
+          {%- set is_s3_table_bucket = (location_clause == '' and (file_format == 'iceberg' or datalake_formats == 'iceberg')) -%}
+          {%- set custom_iceberg_catalog = adapter.get_custom_iceberg_catalog_namespace() -%}
+          {%- set is_s3_tables = (custom_iceberg_catalog == '' and datalake_formats == 'iceberg') -%}
+          {%- if is_s3_table_bucket or is_s3_tables -%}
               drop table if exists {{ full_relation }} purge
           {%- else -%}
               drop table if exists {{ full_relation }}
@@ -164,12 +168,16 @@
 
 {% macro glue__drop_view(relation) -%}
   {%- set file_format = config.get('file_format', default='parquet') -%}
+  {%- set datalake_formats = adapter.get_connection()[0].credentials.datalake_formats -%}
   {% call statement('drop_view', auto_begin=False) -%}
     {%- if file_format != 'iceberg' %}
       drop view if exists {{ relation }}
     {%- else -%}
       {%- set location_clause = adapter.get_location(relation) -%}
-      {%- if location_clause == '' -%}
+      {%- set is_s3_table_bucket = (location_clause == '' and (file_format == 'iceberg' or datalake_formats == 'iceberg')) -%}
+      {%- set custom_iceberg_catalog = adapter.get_custom_iceberg_catalog_namespace() -%}
+      {%- set is_s3_tables = (custom_iceberg_catalog == '' and datalake_formats == 'iceberg') -%}
+      {%- if is_s3_table_bucket or is_s3_tables -%}
           drop table if exists {{ relation }} purge
       {%- else -%}
           drop table if exists {{ relation }}
