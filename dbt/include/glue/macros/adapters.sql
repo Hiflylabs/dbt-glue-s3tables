@@ -81,7 +81,12 @@
       {%- if relation.type == 'view' and file_format != 'iceberg' %}
           drop view if exists {{ this }}
       {%- else -%}
-          drop table if exists {{ full_relation }}
+          {%- set location_clause = adapter.get_location(relation) -%}
+          {%- if file_format == 'iceberg' and location_clause == '' -%}
+              drop table if exists {{ full_relation }} purge
+          {%- else -%}
+              drop table if exists {{ full_relation }}
+          {%- endif -%}
       {%- endif %}
   {%- endcall %}
 {% endmacro %}
@@ -163,7 +168,12 @@
     {%- if file_format != 'iceberg' %}
       drop view if exists {{ relation }}
     {%- else -%}
-      drop table if exists {{ relation }}
+      {%- set location_clause = adapter.get_location(relation) -%}
+      {%- if location_clause == '' -%}
+          drop table if exists {{ relation }} purge
+      {%- else -%}
+          drop table if exists {{ relation }}
+      {%- endif -%}
     {%- endif %}
   {%- endcall %}
 {% endmacro %}
