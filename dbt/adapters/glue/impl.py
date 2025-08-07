@@ -580,6 +580,11 @@ class GlueAdapter(SQLAdapter):
             return catalog_namespace
     
     @available
+    def get_datalake_formats(self):
+        session, _ = self.get_connection()
+        return session.credentials.datalake_formats
+    
+    @available
     def create_csv_table(self, model, agate_table):
         session, client = self.get_connection()
         logger.debug(model)

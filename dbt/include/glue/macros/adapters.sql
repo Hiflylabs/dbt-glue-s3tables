@@ -71,7 +71,7 @@
 
 {% macro glue__drop_relation(relation) -%}
   {%- set file_format = config.get('file_format', default='parquet') -%}
-  {%- set datalake_formats = adapter.get_connection()[0].credentials.datalake_formats -%}
+  {%- set datalake_formats = adapter.get_datalake_formats() -%}
   {%- set full_relation = relation -%}
 
   {%- if file_format == 'iceberg' -%}
@@ -168,7 +168,7 @@
 
 {% macro glue__drop_view(relation) -%}
   {%- set file_format = config.get('file_format', default='parquet') -%}
-  {%- set datalake_formats = adapter.get_connection()[0].credentials.datalake_formats -%}
+  {%- set datalake_formats = adapter.get_datalake_formats() -%}
   {% call statement('drop_view', auto_begin=False) -%}
     {%- if file_format != 'iceberg' %}
       drop view if exists {{ relation }}
